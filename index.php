@@ -51,6 +51,15 @@
     $uploadSuccess = isset($_SESSION['upload_result']['success']) ? $_SESSION['upload_result']['success'] : [];
     $uploadError = isset($_SESSION['upload_result']['error']) ? $_SESSION['upload_result']['error'] : [];
     unset($_SESSION['upload_result']);
+    
+    // 윤곽선 변환 결과 메시지 처리
+    $outlineMessage = '';
+    $outlineStatus = '';
+    if (isset($_SESSION['outline_result'])) {
+        $outlineStatus = $_SESSION['outline_result']['status'];
+        $outlineMessage = $_SESSION['outline_result']['message'];
+        unset($_SESSION['outline_result']);
+    }
 
     function getImagesRecursively($dir, $baseDir = '') {
         $images = [];
@@ -89,11 +98,26 @@
             }
         }
         return $images;
-}
+    }
 
-$imageDir = 'images/';
-$images = getImagesRecursively($imageDir);
-sort($images); // 이미지 경로순 정렬
+    $imageDir = 'images/';
+    $outlineDir = 'outlines/';
+    
+    // outlines 디렉토리 추가
+    if (!file_exists($outlineDir)) {
+        mkdir($outlineDir, 0777, true);
+    }
+    
+    $images = getImagesRecursively($imageDir);
+    $outlines = getImagesRecursively($outlineDir);
+    
+    // 전체 이미지 (일반 이미지 + 윤곽선 이미지)
+    $allImages = array_merge($images, array_map(function($outline) {
+        $outline['path'] = 'outlines/' . $outline['path'];
+        return $outline;
+    }, $outlines));
+    
+    sort($allImages); // 이미지 경로순 정렬
 ?>
 <!DOCTYPE html>
 <html lang="ko">
@@ -141,12 +165,12 @@ sort($images); // 이미지 경로순 정렬
             text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
             margin: 0;
         }
-        .fullscreen-btn {
+        .action-button {
+            width: 50px;
+            height: 50px;
             background: white;
             border: none;
             border-radius: 50%;
-            width: 50px;
-            height: 50px;
             cursor: pointer;
             display: flex;
             align-items: center;
@@ -154,7 +178,7 @@ sort($images); // 이미지 경로순 정렬
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
             transition: transform 0.3s;
         }
-        .fullscreen-btn:hover {
+        .action-button:hover {
             transform: scale(1.1);
         }
         .fullscreen-icon {
@@ -313,12 +337,21 @@ sort($images); // 이미지 경로순 정렬
             background-position: center;
             background-size: 24px;
         }
+
+        .outline-icon {
+            width: 24px;
+            height: 24px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2300a2ff'%3E%3Cpath d='M3 17h18v2H3zm0-7h18v2H3zm0-7h18v2H3zm11 14l3.5-3.5-1.4-1.4-1.1 1.1V10h-2v10.2l-1.1-1.1-1.4 1.4z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: 24px;
+        }
         
         .upload-input {
             display: none;
         }
         
-        .upload-result {
+        .message-container {
             position: fixed;
             bottom: 20px;
             left: 50%;
@@ -329,8 +362,8 @@ sort($images); // 이미지 경로순 정렬
             text-align: center;
         }
         
-        .upload-success,
-        .upload-error {
+        .message-success,
+        .message-error {
             margin: 5px 0;
             padding: 10px;
             border-radius: 10px;
@@ -340,11 +373,11 @@ sort($images); // 이미지 경로순 정렬
             animation: fadeOut 5s forwards;
         }
         
-        .upload-success {
+        .message-success {
             border-left: 4px solid #2ecc71;
         }
         
-        .upload-error {
+        .message-error {
             border-left: 4px solid #e74c3c;
         }
         
@@ -352,6 +385,187 @@ sort($images); // 이미지 경로순 정렬
             0% { opacity: 1; }
             70% { opacity: 1; }
             100% { opacity: 0; visibility: hidden; }
+        }
+        
+        .image-actions {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            display: flex;
+            gap: 5px;
+            z-index: 10;
+        }
+        
+        .image-action-btn {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.8);
+            border: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .image-action-btn:hover {
+            background: white;
+            transform: scale(1.1);
+        }
+        
+        .image-card.outline {
+            background: #f8f8f8;
+            border: 2px dashed #00a2ff;
+        }
+        
+        .outline-badge {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 162, 255, 0.8);
+            color: white;
+            border-radius: 10px;
+            padding: 2px 8px;
+            font-size: 10px;
+            z-index: 5;
+        }
+        
+        /* 팝업 윤곽선 설정 */
+        .popup-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+        }
+        
+        .popup-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+        
+        .popup-container {
+            background: white;
+            border-radius: 15px;
+            width: 90%;
+            max-width: 400px;
+            max-height: 80%;
+            overflow-y: auto;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            transform: translateY(20px);
+            transition: all 0.3s;
+        }
+        
+        .popup-overlay.active .popup-container {
+            transform: translateY(0);
+        }
+        
+        .popup-title {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #00a2ff;
+            text-align: center;
+        }
+        
+        .popup-content {
+            margin-bottom: 20px;
+        }
+        
+        .popup-buttons {
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .popup-btn {
+            padding: 8px 15px;
+            border-radius: 5px;
+            border: none;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        
+        .popup-btn-primary {
+            background: #00a2ff;
+            color: white;
+        }
+        
+        .popup-btn-secondary {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .popup-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+        }
+        
+        .slider-container {
+            margin: 15px 0;
+        }
+        
+        .slider-label {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+        }
+        
+        .slider-value {
+            font-weight: bold;
+            color: #00a2ff;
+        }
+        
+        .slider {
+            width: 100%;
+            -webkit-appearance: none;
+            height: 10px;
+            border-radius: 5px;
+            background: #f0f0f0;
+            outline: none;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00a2ff;
+            cursor: pointer;
+        }
+        
+        .slider::-moz-range-thumb {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #00a2ff;
+            cursor: pointer;
+            border: none;
+        }
+        
+        .preview-container {
+            text-align: center;
+            margin: 15px 0;
+            max-height: 200px;
+            overflow: hidden;
+            border-radius: 10px;
+        }
+        
+        .preview-container img {
+            max-width: 100%;
+            max-height: 200px;
+            object-fit: contain;
         }
     </style>
 </head>
@@ -373,21 +587,86 @@ sort($images); // 이미지 경로순 정렬
     </form>
 
     <div class="image-grid">
-        <?php if (empty($images)): ?>
+        <?php if (empty($allImages)): ?>
             <div class="empty-message">
                 색칠할 이미지가 없습니다.
                 <br>images 폴더에 이미지를 추가해주세요.
             </div>
         <?php else: ?>
-            <?php foreach ($images as $image): ?>
-            <a class="image-card loading" href="drawing.php?image=<?php echo urlencode($image['path']); ?>">
-                <img src="images/<?php echo htmlspecialchars($image['path']); ?>" 
-                     alt="<?php echo htmlspecialchars($image['name']); ?>"
-                     loading="lazy"
-                     onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\' viewBox=\'0 0 100 100\'%3E%3Crect width=\'100\' height=\'100\' fill=\'%23f0f0f0\'/%3E%3Ctext x=\'50\' y=\'50\' font-family=\'Arial\' font-size=\'14\' fill=\'%23999\' text-anchor=\'middle\' dy=\'.3em\'%3E이미지 없음%3C/text%3E%3C/svg%3E'">
-                <div class="image-name"><?php echo htmlspecialchars($image['name']); ?></div>
-            </a>
+            <?php foreach ($allImages as $image): ?>
+                <?php 
+                    $isOutline = strpos($image['path'], 'outlines/') === 0;
+                    $displayPath = $isOutline ? $image['path'] : 'images/' . $image['path'];
+                    $originalPath = $isOutline ? str_replace('outlines/', '', $image['path']) : $image['path'];
+                ?>
+                <div class="image-card loading <?php echo $isOutline ? 'outline' : ''; ?>">
+                    <?php if ($isOutline): ?>
+                        <span class="outline-badge">윤곽선</span>
+                    <?php endif; ?>
+                    
+                    <div class="image-actions">
+                        <?php if (!$isOutline): ?>
+                            <button class="image-action-btn outline-btn" 
+                                    onclick="openOutlinePopup('<?php echo htmlspecialchars($image['path']); ?>')" 
+                                    title="윤곽선 이미지로 변환">
+                                <div style="width: 16px; height: 16px; background-image: url('data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' viewBox=\'0 0 24 24\' fill=\'%2300a2ff\'%3E%3Cpath d=\'M3 17h18v2H3zm0-7h18v2H3zm0-7h18v2H3z\'/%3E%3C/svg%3E'); background-size: contain;"></div>
+                            </button>
+                        <?php endif; ?>
+                    </div>
+                    
+                    <img src="<?php echo htmlspecialchars($displayPath); ?>" 
+                         alt="<?php echo htmlspecialchars($image['name']); ?>"
+                         loading="lazy"
+                         onclick="location.href='drawing.php?image=<?php echo urlencode($image['path']); ?>'"
+                         onerror="this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\' viewBox=\'0 0 100 100\'%3E%3Crect width=\'100\' height=\'100\' fill=\'%23f0f0f0\'/%3E%3Ctext x=\'50\' y=\'50\' font-family=\'Arial\' font-size=\'14\' fill=\'%23999\' text-anchor=\'middle\' dy=\'.3em\'%3E이미지 없음%3C/text%3E%3C/svg%3E'">
+                    <div class="image-name"><?php echo htmlspecialchars($image['name']); ?></div>
+                </div>
             <?php endforeach; ?>
+        <?php endif; ?>
+    </div>
+    
+    <!-- 윤곽선 변환 팝업 -->
+    <div class="popup-overlay" id="outlinePopup">
+        <div class="popup-container">
+        <div class="popup-title">이미지 윤곽선 변환</div>
+            <div class="popup-content">
+                <div class="preview-container">
+                    <img src="" id="previewImage" alt="미리보기">
+                </div>
+                <div class="slider-container">
+                    <div class="slider-label">
+                        <span>윤곽선 민감도:</span>
+                        <span class="slider-value" id="thresholdValue">20</span>
+                    </div>
+                    <input type="range" min="1" max="100" value="20" class="slider" id="thresholdSlider">
+                    <p class="slider-help">낮을수록 더 많은 선이 검출됩니다.</p>
+                </div>
+            </div>
+            <div class="popup-buttons">
+                <button class="popup-btn popup-btn-secondary" onclick="closeOutlinePopup()">취소</button>
+                <button class="popup-btn popup-btn-primary" id="convertButton" onclick="convertToOutline()">변환하기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 메시지 표시 영역 -->
+    <div class="message-container">
+        <?php if (!empty($uploadSuccess)): ?>
+            <div class="message-success">
+                <?php echo count($uploadSuccess); ?>개의 파일이 업로드되었습니다.
+            </div>
+        <?php endif; ?>
+        
+        <?php if (!empty($uploadError)): ?>
+            <div class="message-error">
+                <?php echo implode('<br>', $uploadError); ?>
+            </div>
+        <?php endif; ?>
+        
+        <?php if (!empty($outlineMessage)): ?>
+            <div class="message-<?php echo $outlineStatus; ?>">
+                <?php echo htmlspecialchars($outlineMessage); ?>
+            </div>
         <?php endif; ?>
     </div>
 
@@ -401,7 +680,6 @@ sort($images); // 이미지 경로순 정렬
                     });
             }
             
-            const fullscreenButton = document.getElementById('fullscreenButton');
             const imageCards = document.querySelectorAll('.image-card');
 
             // 개별 이미지 로딩 처리
@@ -418,15 +696,11 @@ sort($images); // 이미지 경로순 정렬
                         card.classList.remove('loading');
                     });
                 }
-
-                // 클릭 이벤트
-                card.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    window.location.href = this.href;
-                });
             });
 
             // 전체화면 토글
+            const fullscreenButton = document.getElementById('fullscreenButton');
+            
             function toggleFullscreen() {
                 if (!document.fullscreenElement && 
                     !document.mozFullScreenElement && 
@@ -462,12 +736,43 @@ sort($images); // 이미지 경로순 정렬
                     document.getElementById('uploadForm').submit();
                 }
             });
+            
+            // 슬라이더 값 표시
+            const thresholdSlider = document.getElementById('thresholdSlider');
+            const thresholdValue = document.getElementById('thresholdValue');
+            
+            if (thresholdSlider) {
+                thresholdSlider.addEventListener('input', function() {
+                    thresholdValue.textContent = this.value;
+                });
+            }
         });
 
         // 더블탭 줌 방지
         document.addEventListener('dblclick', function(e) {
             e.preventDefault();
         });
+        
+        // 윤곽선 변환 팝업 관련 함수
+        let currentImagePath = '';
+        
+        function openOutlinePopup(imagePath) {
+            currentImagePath = imagePath;
+            document.getElementById('previewImage').src = 'images/' + imagePath;
+            document.getElementById('outlinePopup').classList.add('active');
+            event.stopPropagation();
+        }
+        
+        function closeOutlinePopup() {
+            document.getElementById('outlinePopup').classList.remove('active');
+        }
+        
+        function convertToOutline() {
+            if (!currentImagePath) return;
+            
+            const threshold = document.getElementById('thresholdSlider').value;
+            window.location.href = 'outline.php?image=' + encodeURIComponent(currentImagePath) + '&threshold=' + threshold;
+        }
     </script>
 </body>
 </html>

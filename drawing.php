@@ -1,11 +1,17 @@
 <?php
 $imageDir = 'images/';
+$outlineDir = 'outlines/';
 $image = isset($_GET['image']) ? $_GET['image'] : '';
-$imagePath = $imageDir . $image;
+
+// 윤곽선 이미지인지 확인
+$isOutlineImage = strpos($image, 'outlines/') === 0;
+
+// 실제 이미지 경로 결정
+$imagePath = $isOutlineImage ? $image : $imageDir . $image;
 
 // 보안 검사
 $realImagePath = realpath($imagePath);
-$realImageDir = realpath($imageDir);
+$realImageDir = realpath($isOutlineImage ? dirname($imagePath) : $imageDir);
 
 // 이미지 파일 존재 여부와 보안 검사
 $isValidImage = false;
@@ -18,7 +24,9 @@ if (empty($image)) {
 } elseif (strpos($realImagePath, $realImageDir) !== 0) {
     $errorMessage = '잘못된 접근입니다.';
 } else {
-    $extension = strtolower(pathinfo($image, PATHINFO_EXTENSION));
+    // 이미지 경로에서 확장자 추출
+    $pathParts = pathinfo($imagePath);
+    $extension = strtolower($pathParts['extension']);
     $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif'];
     
     if (!in_array($extension, $allowedExtensions)) {
@@ -26,6 +34,13 @@ if (empty($image)) {
     } else {
         $isValidImage = true;
     }
+}
+
+// 이미지 파일명 가져오기
+$displayName = $isValidImage ? pathinfo($image, PATHINFO_FILENAME) : '';
+if ($isOutlineImage) {
+    // 윤곽선 이미지인 경우 'outline_' 접두사 제거
+    $displayName = str_replace('outline_', '', $displayName);
 }
 ?>
 <!DOCTYPE html>
@@ -264,6 +279,18 @@ if (empty($image)) {
             width: 24px;
             height: 24px;
         }
+        
+        .outline-badge {
+            position: absolute;
+            top: 15px;
+            right: 10px;
+            background: rgba(0, 162, 255, 0.8);
+            color: white;
+            border-radius: 10px;
+            padding: 2px 8px;
+            font-size: 10px;
+            z-index: 100;
+        }
     </style>
 </head>
 <body>
@@ -278,7 +305,10 @@ if (empty($image)) {
     <div class="app-container">
         <div class="top-bar">
             <button class="action-button back-button" onclick="location.href='index.php'"></button>
-            <div class="file-name"><?php echo htmlspecialchars(pathinfo($image, PATHINFO_FILENAME)); ?></div>
+            <div class="file-name"><?php echo htmlspecialchars($displayName); ?></div>
+            <?php if ($isOutlineImage): ?>
+                <div class="outline-badge">윤곽선 이미지</div>
+            <?php endif; ?>
             <div style="display: flex; gap: 10px;">
                 <button class="action-button trash-button" onclick="clearCanvas()"></button>
                 <button class="action-button save-button" onclick="downloadImage()"></button>
@@ -504,8 +534,9 @@ if (empty($image)) {
 
         function downloadImage() {
             const link = document.createElement('a');
-            const fileName = <?php echo json_encode(pathinfo($image, PATHINFO_FILENAME)); ?>;
-            link.download = fileName + '_색칠하기.png';
+            const fileName = <?php echo json_encode($displayName); ?>;
+            const suffix = <?php echo $isOutlineImage ? "'_색칠완성'" : "'_색칠하기'"; ?>;
+            link.download = fileName + suffix + '.png';
             link.href = canvas.toDataURL();
             link.click();
         }
